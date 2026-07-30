@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1a2e">
+<title>Dark's School Dash</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#000; font-family:Arial,sans-serif; touch-action:none; user-select:none; }
+  #game-container { position:relative; width:100%; height:100%; }
+  canvas { display:block; touch-action:none; }
+  #loading { position:fixed; inset:0; background:#1a1a2e; color:#f1c40f; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; z-index:999; }
+  #hud { position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; z-index:10; pointer-events:none; }
+  #hud > * { pointer-events:auto; }
+  #score-box { background:rgba(0,0,0,0.7); border:2px solid #f1c40f; border-radius:10px; padding:4px 10px; color:#f1c40f; font-size:14px; font-weight:bold; }
+  #world-box { background:rgba(0,0,0,0.7); border:1px solid #fff; border-radius:10px; padding:3px 8px; color:#fff; font-size:12px; font-weight:bold; }
+  #status-box { background:rgba(0,0,0,0.7); border:2px solid #00ff00; border-radius:10px; padding:3px 10px; color:#00ff00; font-size:13px; font-weight:bold; min-width:90px; text-align:center; opacity:0; transition:opacity 0.2s; }
+  #status-box.show { opacity:1; }
+  #btn-restart { background:#00ccff; color:#000; border:none; border-radius:8px; padding:5px 12px; font-size:13px; font-weight:bold; cursor:pointer; }
+  #btn-restart:active { transform:scale(0.95); }
+  #controls { position:absolute; bottom:0; left:0; right:0; display:flex; gap:8px; padding:8px 10px 16px; z-index:10; background:linear-gradient(to top, rgba(0,0,0,0.6), transparent); }
+  .btn-action { flex:1; height:52px; border:none; border-radius:12px; font-size:13px; font-weight:bold; color:white; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
+  .btn-action:active { transform:scale(0.92); filter:brightness(1.2); }
+  #btn-jump { background:#2980b9; }
+  #btn-crouch { background:#27ae60; }
+  #btn-climb { background:#e67e22; }
+  #overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:20; pointer-events:none; }
+  .overlay-box { background:rgba(0,0,0,0.88); border:3px solid; border-radius:18px; padding:25px 30px; text-align:center; max-width:90%; }
+  #overlay-title { font-size:32px; font-weight:900; color:#f1c40f; margin-bottom:8px; }
+  #overlay-sub { font-size:16px; color:#fff; margin-bottom:12px; }
+  #overlay-hint { font-size:13px; color:#aaa; animation:pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+  #rotate-hint { display:none; position:fixed; inset:0; z-index:100; background:#1a1a2e; flex-direction:column; align-items:center; justify-content:center; color:#f1c40f; font-size:18px; text-align:center; padding:20px; }
+  @media screen and (max-width:500px) and (orientation:portrait) { #rotate-hint { display:flex; } }
+</style>
+</head>
+<body>
+<div id="loading">🐉 Cargando...</div>
+<div id="rotate-hint"><div style="font-size:50px;margin-bottom:15px;">📱↪️</div><div>Gira tu celular a <b>horizontal</b></div></div>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+  <div id="hud">
+    <button id="btn-restart">↻ Reiniciar</button>
+    <div id="world-box">Mundo 1</div>
+    <div id="score-box">Puntos: 0/15</div>
+    <div id="status-box"></div>
+  </div>
+  <div id="controls">
+    <button class="btn-action" id="btn-jump">⬆️ SALTAR</button>
+    <button class="btn-action" id="btn-crouch">⬇️ AGACHARSE</button>
+    <button class="btn-action" id="btn-climb">🧗 ESCALAR</button>
+  </div>
+  <div id="overlay">
+    <div class="overlay-box" id="overlay-content" style="border-color:#f1c40f;">
+      <div id="overlay-title">🐉 Dark's School Dash</div>
+      <div id="overlay-sub">¡Cruza los 5 mundos!</div>
+      <div id="overlay-hint">Toca cualquier botón para comenzar</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DARK'S SCHOOL DASH - Versión Final Robusta
+// ============================================================
+
+const WORLDS = [
+  { name:"Pradera Verde", sky:['#87CEEB','#B0E0E6','#E0F7FA'], ground:'#4CAF50', groundTop:'#2E7D32', mountainF:'#2E7D32', mountainS:'#1B5E20', snow:'#E8F5E9', houseWall:'#FF7043', houseRoof:'#FF5722', houseWin:'#FFEB3B', houseDoor:'#5D4037', tree:'#2E7D32', treeDark:'#1B5E20', trunk:'#5D4037', obsLow:'#E53935', obsHigh:'#E53935', obsWall:'#795548', obsWallD:'#3E2723', decor:'bush', star:'#fff', moon:'rgba(255,255,220,0.9)' },
+  { name:"Desierto", sky:['#FFCC80','#FFB74D','#FF8A65'], ground:'#D7CCC8', groundTop:'#A1887F', mountainF:'#BF360C', mountainS:'#8D6E63', snow:'#FFCCBC', houseWall:'#FFAB91', houseRoof:'#FF7043', houseWin:'#FFF59D', houseDoor:'#4E342E', tree:'#6D4C41', treeDark:'#4E342E', trunk:'#3E2723', obsLow:'#FF5722', obsHigh:'#FF5722', obsWall:'#8D6E63', obsWallD:'#5D4037', decor:'cactus', star:'#FFE0B2', moon:'rgba(255,200,150,0.9)' },
+  { name:"Hielo", sky:['#B3E5FC','#81D4FA','#4FC3F7'], ground:'#E1F5FE', groundTop:'#B3E5FC', mountainF:'#455A64', mountainS:'#37474F', snow:'#E3F2FD', houseWall:'#90CAF9', houseRoof:'#64B5F6', houseWin:'#FFF176', houseDoor:'#263238', tree:'#546E7A', treeDark:'#455A64', trunk:'#37474F', obsLow:'#29B6F6', obsHigh:'#29B6F6', obsWall:'#78909C', obsWallD:'#455A64', decor:'snowman', star:'#E3F2FD', moon:'rgba(220,240,255,0.9)' },
+  { name:"Bosque", sky:['#4A148C','#6A1B9A','#8E24AA'], ground:'#2E7D32', groundTop:'#1B5E20', mountainF:'#311B92', mountainS:'#4527A0', snow:'#D1C4E9', houseWall:'#7E57C2', houseRoof:'#9575CD', houseWin:'#FFEB3B', houseDoor:'#311B92', tree:'#1B5E20', treeDark:'#004D40', trunk:'#3E2723', obsLow:'#AB47BC', obsHigh:'#AB47BC', obsWall:'#5E35B1', obsWallD:'#311B92', decor:'mushroom', star:'#E1BEE7', moon:'rgba(200,180,255,0.9)' },
+  { name:"Castillo", sky:['#212121','#424242','#616161'], ground:'#B71C1C', groundTop:'#7F0000', mountainF:'#37474F', mountainS:'#263238', snow:'#FFCDD2', houseWall:'#D32F2F', houseRoof:'#B71C1C', houseWin:'#FFEB3B', houseDoor:'#212121', tree:'#455A64', treeDark:'#37474F', trunk:'#212121', obsLow:'#FF1744', obsHigh:'#FF1744', obsWall:'#616161', obsWallD:'#212121', decor:'skull', star:'#FFCDD2', moon:'rgba(255,100,100,0.9)' }
+];
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const loadingEl = document.getElementById('loading');
+
+// Estado
+let W=0, H=0, groundY=0, scale=1;
+let started=false, gameOver=false, victory=false, levelComplete=false;
+let frame=0, flashAlpha=0, transitionTimer=0;
+let player={x:100,y:300,vy:0,state:'run',climbTarget:null,crouchTimer:0,squishTimer:0};
+let gravity=0.5, jumpForce=-10, baseSpeed=2, speed=2;
+let obstacles=[], particles=[];
+let score=0, goal=15, level=1, currentWorld=0;
+let spawnTimer=0, bgOffset=0;
+
+// Capas (tamaño limitado para evitar crash en móviles)
+let layerSky=null, layerMountains=null, layerScenery=null;
+let layersReady=false;
+
+// ===== INICIALIZACIÓN SEGURA =====
+function init() {
+  try {
+    resize();
+    if (W < 100 || H < 100) {
+      setTimeout(init, 100);
+      return;
+    }
+    generateLayers();
+    player.x = (W * 0.22) | 0;
+    player.y = groundY;
+    updateScore();
+    updateWorldBox();
+    loadingEl.style.display = 'none';
+    requestAnimationFrame(update);
+  } catch(e) {
+    console.error('Init error:', e);
+    loadingEl.textContent = 'Error al cargar. Recarga la página.';
+  }
+}
+
+function resize() {
+  const vw = window.visualViewport;
+
+  W = vw ? Math.round(vw.width) : window.innerWidth;
+  H = vw ? Math.round(vw.height) : window.innerHeight;
+
+  canvas.width = W;
+  canvas.height = H;
+
+  canvas.style.width = "100vw";
+  canvas.style.height = "100vh";
+
+  scale = Math.min(W / 1200, H / 800);
+  groundY = Math.floor(H * 0.68);
+
+  gravity = H * 0.0013;
+  jumpForce = -H * 0.031;
+
+  baseSpeed = Math.max(1.5, W * 0.003);
+  speed = baseSpeed * (1 + currentWorld * 0.08);
+}
+
+// ===== GENERAR CAPAS (con límite de tamaño) =====
+function generateLayers() {
+  try {
+    const th = WORLDS[currentWorld];
+
+    // 1. Cielo (1x)
+    layerSky = document.createElement('canvas');
+    layerSky.width = W;
+    layerSky.height = H;
+    const sctx = layerSky.getContext('2d');
+    const grad = sctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, th.sky[0]);
+    grad.addColorStop(0.5, th.sky[1]);
+    grad.addColorStop(1, th.sky[2]);
+    sctx.fillStyle = grad;
+    sctx.fillRect(0, 0, W, H);
+    // Estrellas
+    sctx.fillStyle = th.star;
+    for (let i = 0; i < 15; i++) {
+      sctx.fillRect((Math.random() * W) | 0, (Math.random() * H * 0.4) | 0, 2, 2);
+    }
+    // Luna
+    sctx.fillStyle = th.moon;
+    sctx.beginPath();
+    sctx.arc((W * 0.82) | 0, (H * 0.15) | 0, (H * 0.04) | 0, 0, 7);
+    sctx.fill();
+
+    // 2. Montañas (1x ancho, se repite)
+    layerMountains = document.createElement('canvas');
+    layerMountains.width = Math.min(W, 2048);
+    layerMountains.height = H;
+    const mctx = layerMountains.getContext('2d');
+    const mw = layerMountains.width;
+    // Lejanas
+    mctx.fillStyle = th.mountainF;
+    const mStep = (mw * 0.35) | 0;
+    for (let i = -1; i < 5; i++) {
+      const mx = (i * mStep) | 0;
+      const base = (mw * 0.15) | 0;
+      const peak = (H * 0.25) | 0;
+      const my = groundY;
+      mctx.beginPath();
+      mctx.moveTo(mx - base, my);
+      mctx.lineTo(mx, my - peak);
+      mctx.lineTo(mx + base, my);
+      mctx.closePath();
+      mctx.fill();
+      mctx.fillStyle = th.snow;
+      mctx.beginPath();
+      mctx.moveTo((mx - base * 0.15) | 0, (my - peak * 0.7) | 0);
+      mctx.lineTo(mx, my - peak);
+      mctx.lineTo((mx + base * 0.15) | 0, (my - peak * 0.7) | 0);
+      mctx.closePath();
+      mctx.fill();
+      mctx.fillStyle = th.mountainF;
+    }
+    // Cercanas
+    mctx.fillStyle = th.mountainS;
+    const mStep2 = (mw * 0.28) | 0;
+    for (let i = -1; i < 6; i++) {
+      const mx = (i * mStep2) | 0;
+      const base = (mw * 0.12) | 0;
+      const peak = (H * 0.16) | 0;
+      const my = (groundY + H * 0.02) | 0;
+      mctx.beginPath();
+      mctx.moveTo(mx - base, my);
+      mctx.lineTo(mx, my - peak);
+      mctx.lineTo(mx + base, my);
+      mctx.closePath();
+      mctx.fill();
+    }
+
+    // 3. Escenario (1x ancho, se repite)
+    layerScenery = document.createElement('canvas');
+    layerScenery.width = Math.min(W, 2048);
+    layerScenery.height = H;
+    const hctx = layerScenery.getContext('2d');
+    const sw = layerScenery.width;
+    const casaY = groundY;
+    const step = (sw * 0.3) | 0;
+
+    for (let i = 0; i < 5; i++) {
+      const hx = (i * step + (step >> 1)) | 0;
+      const hw = (sw * 0.06) | 0;
+      const hh = (H * 0.11) | 0;
+
+      // Casa
+      hctx.fillStyle = th.houseWall;
+      hctx.fillRect(hx - hw, casaY - hh, hw * 2, hh);
+      // Techo
+      hctx.fillStyle = th.houseRoof;
+      hctx.beginPath();
+      hctx.moveTo((hx - hw - (sw * 0.01) | 0), casaY - hh);
+      hctx.lineTo(hx, (casaY - hh - (H * 0.045) | 0));
+      hctx.lineTo((hx + hw + (sw * 0.01) | 0), casaY - hh);
+      hctx.closePath();
+      hctx.fill();
+      // Ventanas
+      hctx.fillStyle = th.houseWin;
+      hctx.fillRect((hx - hw * 0.4) | 0, (casaY - hh * 0.65) | 0, (hw * 0.35) | 0, (hh * 0.28) | 0);
+      hctx.fillRect((hx + hw * 0.05) | 0, (casaY - hh * 0.65) | 0, (hw * 0.35) | 0, (hh * 0.28) | 0);
+      // Puerta
+      hctx.fillStyle = th.houseDoor;
+      hctx.fillRect((hx - hw * 0.22) | 0, (casaY - hh * 0.42) | 0, (hw * 0.44) | 0, (hh * 0.42) | 0);
+
+      // Decoración
+      const tx = (hx - hw * 1.5) | 0;
+      const ty = casaY;
+      if (th.decor === 'cactus') {
+        hctx.fillStyle = th.tree;
+        hctx.fillRect((tx - 3) | 0, (ty - (H * 0.10) | 0) | 0, 6, (H * 0.10) | 0);
+        hctx.beginPath();
+        hctx.arc(tx, (ty - (H * 0.10) | 0) | 0, (sw * 0.02) | 0, 0, 7);
+        hctx.fill();
+      } else if (th.decor === 'snowman') {
+        hctx.fillStyle = '#fff';
+        hctx.beginPath();
+        hctx.arc(tx, (ty - (H * 0.05) | 0) | 0, (sw * 0.018) | 0, 0, 7);
+        hctx.fill();
+        hctx.beginPath();
+        hctx.arc(tx, (ty - (H * 0.09) | 0) | 0, (sw * 0.013) | 0, 0, 7);
+        hctx.fill();
+      } else if (th.decor === 'mushroom') {
+        hctx.fillStyle = th.trunk;
+        hctx.fillRect((tx - 2) | 0, (ty - (H * 0.07) | 0) | 0, 4, (H * 0.07) | 0);
+        hctx.fillStyle = '#E53935';
+        hctx.beginPath();
+        hctx.ellipse(tx, (ty - (H * 0.07) | 0) | 0, (sw * 0.022) | 0, (H * 0.025) | 0, 0, 0, 7);
+        hctx.fill();
+        hctx.fillStyle = '#fff';
+        hctx.beginPath();
+        hctx.arc((tx - (sw * 0.008) | 0) | 0, (ty - (H * 0.08) | 0) | 0, 2, 0, 7);
+        hctx.fill();
+      } else if (th.decor === 'skull') {
+        hctx.fillStyle = '#B0BEC5';
+        hctx.beginPath();
+        hctx.arc(tx, (ty - (H * 0.04) | 0) | 0, (sw * 0.018) | 0, 0, 7);
+        hctx.fill();
+        hctx.fillStyle = '#000';
+        hctx.beginPath();
+        hctx.arc((tx - (sw * 0.007) | 0) | 0, (ty - (H * 0.04) | 0) | 0, (sw * 0.005) | 0, 0, 7);
+        hctx.fill();
+        hctx.beginPath();
+        hctx.arc((tx + (sw * 0.007) | 0) | 0, (ty - (H * 0.04) | 0) | 0, (sw * 0.005) | 0, 0, 7);
+        hctx.fill();
+      } else {
+        // Bush
+        hctx.fillStyle = th.tree;
+        hctx.beginPath();
+        hctx.moveTo(tx, ty);
+        hctx.lineTo((tx - (sw * 0.03) | 0) | 0, (ty - (H * 0.11) | 0) | 0);
+        hctx.lineTo((tx + (sw * 0.03) | 0) | 0, (ty - (H * 0.11) | 0) | 0);
+        hctx.closePath();
+        hctx.fill();
+        hctx.fillStyle = th.treeDark;
+        hctx.beginPath();
+        hctx.moveTo(tx, (ty - (H * 0.03) | 0) | 0);
+        hctx.lineTo((tx - (sw * 0.02) | 0) | 0, (ty - (H * 0.14) | 0) | 0);
+        hctx.lineTo((tx + (sw * 0.02) | 0) | 0, (ty - (H * 0.14) | 0) | 0);
+        hctx.closePath();
+        hctx.fill();
+        hctx.fillStyle = th.trunk;
+        hctx.fillRect((tx - 2) | 0, (ty - (H * 0.03) | 0) | 0, 4, (H * 0.03) | 0);
+      }
+    }
+
+    layersReady = true;
+  } catch (e) {
+    console.error('Layer error:', e);
+    layersReady = false;
+  }
+}
+
+// ===== PARTICULAS =====
+const MAX_PARTICLES = 30;
+function spawnParticles(x, y, count, type) {
+  if (particles.length >= MAX_PARTICLES) return;
+  count = Math.min(count, MAX_PARTICLES - particles.length);
+  for (let i = 0; i < count; i++) {
+    let p = { x: x | 0, y: y | 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 3, r: 255, g: 255, b: 255 };
+    if (type === 'fire') {
+      const a = (Math.random() - 0.5) * 0.6;
+      const sp = Math.random() * 2 + 1;
+      p.vx = Math.cos(a) * sp + speed * 0.2;
+      p.vy = Math.sin(a) * sp;
+      p.maxLife = (Math.random() * 8 + 5) | 0;
+      p.size = (Math.random() * 3 + 2) | 0;
+      const colors = [[255, 69, 0], [255, 140, 0], [255, 215, 0]];
+      const c = colors[(Math.random() * 3) | 0];
+      p.r = c[0]; p.g = c[1]; p.b = c[2];
+    } else if (type === 'dust') {
+      p.vx = (Math.random() - 0.5) * 2;
+      p.vy = -Math.random() * 2 - 0.5;
+      p.maxLife = (Math.random() * 10 + 6) | 0;
+      p.size = (Math.random() * 2 + 1) | 0;
+      p.r = 200; p.g = 200; p.b = 200;
+    } else if (type === 'sparkle') {
+      const a = Math.random() * 6.28;
+      const sp = Math.random() * 2 + 1;
+      p.vx = Math.cos(a) * sp;
+      p.vy = Math.sin(a) * sp;
+      p.maxLife = (Math.random() * 15 + 10) | 0;
+      p.size = (Math.random() * 3 + 2) | 0;
+      p.r = 255; p.g = 215; p.b = 0;
+    } else if (type === 'confetti') {
+      const a = Math.random() * 6.28;
+      const sp = Math.random() * 3 + 1;
+      p.vx = Math.cos(a) * sp;
+      p.vy = Math.sin(a) * sp + 0.5;
+      p.maxLife = (Math.random() * 30 + 20) | 0;
+      p.size = (Math.random() * 4 + 2) | 0;
+      const colors = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]];
+      const c = colors[(Math.random() * 6) | 0];
+      p.r = c[0]; p.g = c[1]; p.b = c[2];
+    }
+    p.life = p.maxLife;
+    particles.push(p);
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// ===== ACCIONES =====
+function doJump() {
+  if (!started) { started = true; document.getElementById('overlay').style.display = 'none'; }
+  if (gameOver || victory || levelComplete) return;
+  if ((player.state === 'run' || player.state === 'crouch') && player.y >= groundY - 5) {
+    player.state = 'jump';
+    player.vy = jumpForce;
+    player.crouchTimer = 0;
+    spawnParticles(player.x + 15, groundY, 2, 'dust');
+  }
+}
+function doCrouch() {
+  if (!started) { started = true; document.getElementById('overlay').style.display = 'none'; }
+  if (gameOver || victory || levelComplete) return;
+  if (player.state === 'run') { player.state = 'crouch'; player.crouchTimer = 65; spawnParticles(player.x + 10, groundY, 2, 'dust'); }
+}
+function doClimb() {
+  if (!started) { started = true; document.getElementById('overlay').style.display = 'none'; }
+  if (gameOver || victory || levelComplete) return;
+  if (player.state === 'climb' && player.climbTarget) {
+    player.y -= H * 0.04;
+    if (player.y < player.climbTarget.y) {
+      player.state = 'jump';
+      player.vy = -H * 0.008;
+      player.climbTarget.climbed = true;
+      player.climbTarget = null;
+    }
+  }
+}
+
+function nextLevel() {
+  levelComplete = false;
+  currentWorld++;
+  if (currentWorld >= WORLDS.length) {
+    victory = true;
+    spawnParticles(W / 2, H / 2, 60, 'confetti');
+    return;
+  }
+  transitionTimer = 120;
+  layersReady = false;
+  generateLayers();
+  obstacles = [];
+  particles = [];
+  score = 0;
+  level = currentWorld + 1;
+  speed = baseSpeed * (1 + currentWorld * 0.08);
+  player.y = groundY;
+  player.state = 'run';
+  player.vy = 0;
+  player.climbTarget = null;
+  player.squishTimer = 0;
+  updateScore();
+  updateWorldBox();
+}
+
+function restart() {
+  currentWorld = 0;
+  player = { x: (W * 0.22) | 0, y: groundY, vy: 0, state: 'run', climbTarget: null, crouchTimer: 0, squishTimer: 0 };
+  obstacles = [];
+  particles = [];
+  score = 0;
+  level = 1;
+  speed = baseSpeed;
+  spawnTimer = 0;
+  frame = 0;
+  gameOver = false;
+  victory = false;
+  levelComplete = false;
+  transitionTimer = 0;
+  started = true;
+  layersReady = false;
+  generateLayers();
+  document.getElementById('overlay').style.display = 'none';
+  updateScore();
+  updateWorldBox();
+}
+
+function updateScore() { document.getElementById('score-box').textContent = `Puntos: ${score}/${goal}`; }
+function updateWorldBox() { document.getElementById('world-box').textContent = `Mundo ${currentWorld + 1}: ${WORLDS[currentWorld].name}`; }
+
+// ===== CONTROLES =====
+document.getElementById('btn-jump').addEventListener('touchstart', (e) => { e.preventDefault(); doJump(); });
+document.getElementById('btn-jump').addEventListener('mousedown', (e) => { e.preventDefault(); doJump(); });
+document.getElementById('btn-crouch').addEventListener('touchstart', (e) => { e.preventDefault(); doCrouch(); });
+document.getElementById('btn-crouch').addEventListener('mousedown', (e) => { e.preventDefault(); doCrouch(); });
+document.getElementById('btn-climb').addEventListener('touchstart', (e) => { e.preventDefault(); doClimb(); });
+document.getElementById('btn-climb').addEventListener('mousedown', (e) => { e.preventDefault(); doClimb(); });
+document.getElementById('btn-restart').addEventListener('click', restart);
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') doJump();
+  else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+    if (player.state === 'climb') doClimb(); else doJump();
+  }
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') doCrouch();
+  if (e.code === 'KeyC') doClimb();
+  if (e.code === 'KeyR') restart();
+});
+
+let touchStartY = 0;
+canvas.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; });
+canvas.addEventListener('touchend', (e) => {
+  const dy = touchStartY - e.changedTouches[0].clientY;
+  if (Math.abs(dy) > 30) { if (dy > 0) doJump(); else doCrouch(); }
+});
+
+// ===== DIBUJO DEL FONDO (fallback si capas fallan) =====
+function drawBackground() {
+  const th = WORLDS[currentWorld];
+
+  if (layersReady && layerSky) {
+    ctx.drawImage(layerSky, 0, 0);
+  } else {
+    // Fallback directo
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, th.sky[0]);
+    grad.addColorStop(0.5, th.sky[1]);
+    grad.addColorStop(1, th.sky[2]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Montañas
+  if (layersReady && layerMountains) {
+    const mw = layerMountains.width;
+    const mOff = (bgOffset * 0.3) | 0;
+    const mx = -(mOff % mw);
+    ctx.drawImage(layerMountains, mx, 0);
+    ctx.drawImage(layerMountains, mx + mw, 0);
+  }
+
+  // Escenario
+  if (layersReady && layerScenery) {
+    const sw = layerScenery.width;
+    const sOff = (bgOffset * 0.8) | 0;
+    const sx = -(sOff % sw);
+    ctx.drawImage(layerScenery, sx, 0);
+    ctx.drawImage(layerScenery, sx + sw, 0);
+  }
+
+  // Suelo
+  const th2 = WORLDS[currentWorld];
+  ctx.fillStyle = th2.ground;
+  ctx.fillRect(0, groundY, W, H - groundY);
+  ctx.strokeStyle = th2.groundTop;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+  // Ladrillos suelo
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1;
+  const brickW = (W * 0.035) | 0;
+  const brickH = (H * 0.022) | 0;
+  const brickOff = (bgOffset | 0) % brickW;
+  for (let row = 0; row < H - groundY; row += brickH) {
+    const offset = ((row / brickH) % 2) * (brickW >> 1) - brickOff;
+    for (let col = -brickW; col < W + brickW; col += brickW) {
+      ctx.strokeRect(col + offset, groundY + row, brickW, brickH);
+    }
+  }
+}
+
+// ===== DIBUJO DRAGÓN =====
+function drawDragon() {
+  const x = player.x | 0;
+  const y = player.y | 0;   // pies siempre en el suelo, sin offset flotante
+  const s = scale;
+  let bodyW = (W * 0.05 * s) | 0;
+  // bodyH coincide exactamente con el hitbox (ph) para coherencia visual/física
+  let bodyH = player.state === 'crouch' ? (H * 0.055 * s) | 0 : (H * 0.1 * s) | 0;
+  // Efecto squish al aterrizar: aplana el cuerpo brevemente
+  if (player.squishTimer > 0) {
+    const t = player.squishTimer / 7;
+    bodyH = (bodyH * (1 - t * 0.28)) | 0;
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse((x + bodyW * 0.4) | 0, groundY - 3, (bodyW * 0.5) | 0, 4, 0, 0, 7);
+  ctx.fill();
+
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.ellipse((x + bodyW * 0.3) | 0, (y - bodyH * 0.5) | 0, (bodyW * 0.5) | 0, (bodyH * 0.5) | 0, 0, 0, 7);
+  ctx.fill();
+  ctx.strokeStyle = '#c0392b';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.beginPath();
+  ctx.ellipse((x + bodyW * 0.35) | 0, (y - bodyH * 0.45) | 0, (bodyW * 0.3) | 0, (bodyH * 0.3) | 0, 0, 0, 7);
+  ctx.fill();
+
+  const headX = (x + bodyW * 0.65) | 0;
+  const headY = (y - bodyH * 0.65) | 0;
+  const headR = (H * 0.032 * s) | 0;
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.ellipse(headX, headY, (headR * 1.3) | 0, headR | 0, 0, 0, 7);
+  ctx.fill();
+  ctx.strokeStyle = '#c0392b';
+  ctx.stroke();
+
+  const eyeR = (headR * 0.22) | 0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.3) | 0, (headY - headR * 0.15) | 0, eyeR, 0, 7);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.3) | 0, (headY + headR * 0.15) | 0, eyeR, 0, 7);
+  ctx.fill();
+  ctx.fillStyle = '#f1c40f';
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.38) | 0, (headY - headR * 0.12) | 0, (eyeR * 0.6) | 0, 0, 7);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.38) | 0, (headY + headR * 0.18) | 0, (eyeR * 0.6) | 0, 0, 7);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.42) | 0, (headY - headR * 0.1) | 0, (eyeR * 0.3) | 0, 0, 7);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc((headX + headR * 0.42) | 0, (headY + headR * 0.2) | 0, (eyeR * 0.3) | 0, 0, 7);
+  ctx.fill();
+
+  ctx.strokeStyle = '#e67e22';
+  ctx.lineWidth = (3 * s) | 0 || 1;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo((headX - headR * 0.3) | 0, (headY - headR * 0.6) | 0);
+  ctx.quadraticCurveTo((headX - headR * 0.6) | 0, (headY - headR * 1.3) | 0, (headX - headR * 0.1) | 0, (headY - headR * 0.8) | 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo((headX + headR * 0.1) | 0, (headY - headR * 0.6) | 0);
+  ctx.quadraticCurveTo((headX - headR * 0.2) | 0, (headY - headR * 1.5) | 0, (headX + headR * 0.3) | 0, (headY - headR * 0.9) | 0);
+  ctx.stroke();
+
+  ctx.fillStyle = '#922b21';
+  const flap = player.state === 'jump' ? (H * 0.025) | 0 : (Math.sin(frame * 0.12) * H * 0.008) | 0;
+  ctx.beginPath();
+  ctx.moveTo((x + bodyW * 0.2) | 0, (y - bodyH * 0.5) | 0);
+  ctx.lineTo((x - bodyW * 0.3) | 0, (y - bodyH * 0.8 - flap) | 0);
+  ctx.lineTo((x - bodyW * 0.15) | 0, (y - bodyH * 0.25) | 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#c0392b';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.strokeStyle = '#e74c3c';
+  ctx.lineWidth = (5 * s) | 0 || 1;
+  ctx.lineCap = 'round';
+  const tailWave = (Math.sin(frame * 0.18) * W * 0.012 + (player.state === 'jump' ? W * 0.015 : 0)) | 0;
+  ctx.beginPath();
+  ctx.moveTo(x, (y - bodyH * 0.3) | 0);
+  ctx.quadraticCurveTo((x - W * 0.035) | 0, (y - bodyH * 0.15 + tailWave) | 0, (x - W * 0.07) | 0, (y - bodyH * 0.35 + tailWave * 0.7) | 0);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#ff6b35';
+  ctx.lineWidth = (3 * s) | 0 || 1;
+  for (let i = 0; i < 4; i++) {
+    const sx = (x + bodyW * 0.15 + i * bodyW * 0.12) | 0;
+    const sy = (y - bodyH * 0.15 - i * bodyH * 0.08) | 0;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx, (sy - (H * 0.016) | 0) | 0);
+    ctx.stroke();
+  }
+
+  if (player.state !== 'climb') {
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = (3 * s) | 0 || 1;
+    ctx.beginPath();
+    ctx.moveTo((x + bodyW * 0.3) | 0, y);
+    ctx.lineTo((x + bodyW * 0.35) | 0, (y + (H * 0.02) | 0) | 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo((x + bodyW * 0.55) | 0, y);
+    ctx.lineTo((x + bodyW * 0.6) | 0, (y + (H * 0.02) | 0) | 0);
+    ctx.stroke();
+    ctx.strokeStyle = '#ecf0f1';
+    ctx.lineWidth = (2 * s) | 0 || 1;
+    for (const lx of [bodyW * 0.35, bodyW * 0.6]) {
+      const cx = (x + lx) | 0;
+      const cy = (y + (H * 0.02) | 0) | 0;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx - 3, (cy + (H * 0.01) | 0) | 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + 3, (cy + (H * 0.01) | 0) | 0);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawObstacles() {
+  const th = WORLDS[currentWorld];
+  for (const obs of obstacles) {
+    if (obs.tipo === 'wall') {
+      // PARED - bloque vertical que toca el suelo
+      ctx.fillStyle = th.obsWall;
+      ctx.fillRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      ctx.strokeStyle = th.obsWallD;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      // Ladrillos
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1;
+      for (let row = 0; row < obs.h; row += (H*0.03)|0) {
+        ctx.beginPath();
+        ctx.moveTo((obs.x + 2)|0, (obs.y + row)|0);
+        ctx.lineTo((obs.x + obs.w - 2)|0, (obs.y + row)|0);
+        ctx.stroke();
+      }
+    } else if (obs.tipo === 'high') {
+      // VIGA SUSPENDIDA - obstáculo aéreo, agacharse para pasar
+      // Cadenas/Postes que sostienen la viga
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo((obs.x + obs.w*0.2)|0, 0);
+      ctx.lineTo((obs.x + obs.w*0.2)|0, obs.y|0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo((obs.x + obs.w*0.8)|0, 0);
+      ctx.lineTo((obs.x + obs.w*0.8)|0, obs.y|0);
+      ctx.stroke();
+      // La viga
+      ctx.fillStyle = th.obsHigh;
+      ctx.fillRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      ctx.strokeStyle = '#8B0000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      // Brillo metálico
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect((obs.x + 2)|0, (obs.y + 2)|0, (obs.w - 4)|0, (obs.h * 0.3)|0);
+      // Indicador de peligro
+      ctx.fillStyle = '#FFEB3B';
+      ctx.font = `bold ${Math.max(10, (obs.h*0.5)|0)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.fillText('▼', (obs.x + obs.w*0.5)|0, (obs.y + obs.h*0.7)|0);
+    } else {
+      // OBSTÁCULO BAJO - saltar para pasar
+      ctx.fillStyle = th.obsLow;
+      ctx.fillRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      ctx.strokeStyle = '#8B0000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(obs.x | 0, obs.y | 0, obs.w | 0, obs.h | 0);
+      // Pico/espinas
+      ctx.fillStyle = '#B71C1C';
+      for (let i = 0; i < 3; i++) {
+        const sx = (obs.x + 3 + i * (obs.w/3)) | 0;
+        ctx.beginPath();
+        ctx.moveTo(sx, obs.y|0);
+        ctx.lineTo((sx + (obs.w/6))|0, (obs.y - (H*0.015)|0)|0);
+        ctx.lineTo((sx + (obs.w/3))|0, obs.y|0);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const a = p.life / p.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = `rgb(${p.r | 0},${p.g | 0},${p.b | 0})`;
+    const sz = (p.size * a) | 0 || 1;
+    ctx.fillRect((p.x - sz / 2) | 0, (p.y - sz / 2) | 0, sz, sz);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFlag() {
+  const fx = (W * 0.85) | 0;
+  const fy = groundY | 0;
+  ctx.fillStyle = '#795548';
+  ctx.fillRect(fx, (fy - H * 0.16) | 0, (W * 0.007) | 0, (H * 0.16) | 0);
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.arc((fx + (W * 0.003) | 0) | 0, (fy - H * 0.16) | 0, (W * 0.01) | 0, 0, 7);
+  ctx.fill();
+  ctx.fillStyle = '#E53935';
+  ctx.beginPath();
+  ctx.moveTo((fx + (W * 0.007) | 0) | 0, (fy - H * 0.14) | 0);
+  ctx.lineTo((fx + (W * 0.05) | 0) | 0, (fy - H * 0.12) | 0);
+  ctx.lineTo((fx + (W * 0.007) | 0) | 0, (fy - H * 0.10) | 0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ===== LOOP PRINCIPAL =====
+function update() {
+  // Transición entre mundos
+  if (transitionTimer > 0) {
+    transitionTimer--;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = `bold ${(H * 0.06) | 0}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`MUNDO ${currentWorld + 1}`, (W / 2) | 0, (H * 0.45) | 0);
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${(H * 0.03) | 0}px Arial`;
+    ctx.fillText(WORLDS[currentWorld].name, (W / 2) | 0, (H * 0.55) | 0);
+    if (transitionTimer <= 0) {
+      document.getElementById('overlay').style.display = 'none';
+    }
+    requestAnimationFrame(update);
+    return;
+  }
+
+  if (!started) {
+    drawBackground();
+    drawDragon();
+    requestAnimationFrame(update);
+    return;
+  }
+
+  frame++;
+
+  if (!gameOver && !victory && !levelComplete) {
+    bgOffset += speed;  // flashAlpha se decrementa solo en el bloque de dibujo
+
+    // Física
+    if (player.state === 'jump') {
+      player.y += player.vy;
+      player.vy += gravity;
+      if (player.y >= groundY) {
+        player.y = groundY;
+        player.state = 'run';
+        player.vy = 0;
+        player.squishTimer = 7;   // breve aplastamiento visual al caer
+        spawnParticles(player.x + 10, groundY, 2, 'dust');
+      }
+    } else if (player.state === 'crouch') {
+      player.crouchTimer--;
+      if (player.crouchTimer <= 0) player.state = 'run';
+    } else if (player.state === 'climb') {
+      if (player.climbTarget) {
+        if (player.y > player.climbTarget.y + H * 0.05) player.y -= H * 0.012;
+      } else {
+        player.state = 'jump';
+        player.vy = 0;
+      }
+    }
+    if (player.squishTimer > 0) player.squishTimer--;
+
+    if (frame % 6 === 0 && (player.state === 'jump' || player.state === 'run')) {
+      spawnParticles(player.x + (W * 0.04) | 0, player.y - (H * 0.05) | 0, 1, 'fire');
+    }
+
+    // Generar obstáculos
+    spawnTimer--;
+    if (spawnTimer <= 0) {
+      const r = Math.random();
+      let tipo = 'low';
+      if (r > 0.55) tipo = 'high';
+      if (r > 0.85) tipo = 'wall';
+      const obs = { x: W + 50, tipo, climbed: false, scored: false };
+      if (tipo === 'low') {
+        obs.y = groundY - H * 0.05;
+        obs.w = (W * 0.032) | 0;
+        obs.h = (H * 0.05) | 0;
+      } else if (tipo === 'high') {
+        // VIGA SUSPENDIDA - hay que AGACHARSE para pasar debajo
+        obs.y = groundY - H * 0.19;   // Parte superior de la viga
+        obs.w = (W * 0.038) | 0;
+        obs.h = (H * 0.11) | 0;       // Altura de la viga (NO toca el suelo)
+        obs.isHigh = true;
+      } else {
+        // PARED - hay que ESCALAR
+        obs.y = groundY - H * 0.18;
+        obs.w = (W * 0.032) | 0;
+        obs.h = (H * 0.18) | 0;
+      }
+      obstacles.push(obs);
+      const minSpawn = Math.max(45, (W * 0.09 / (speed / baseSpeed)) | 0);
+      spawnTimer = minSpawn + ((Math.random() * 20) | 0);
+    }
+
+    // Mover obstáculos
+    const pw = W * 0.04;
+    const ph = player.state !== 'crouch' ? H * 0.1 * scale : H * 0.055 * scale;
+    const px1 = player.x;
+    const py1 = player.y - ph;
+    const px2 = player.x + pw;
+    const py2 = player.y;
+    let proxDist = 9999;
+    let proxTipo = null;
+    const newObs = [];
+
+    for (const obs of obstacles) {
+      obs.x -= speed;
+      const dist = obs.x - player.x;
+      if (dist > 0 && dist < proxDist) {
+        proxDist = dist;
+        proxTipo = obs.tipo;
+      }
+
+      if (obs.x + obs.w < player.x && !obs.scored) {
+        score++;
+        obs.scored = true;
+        spawnParticles(player.x, player.y - 25, 4, 'sparkle');
+        updateScore();
+        if (score >= goal) {
+          levelComplete = true;
+          spawnParticles(W / 2, H / 2, 40, 'confetti');
+          setTimeout(nextLevel, 2000);
+        }
+        continue;
+      }
+
+      const ox1 = obs.x;
+      const oy1 = obs.y;
+      const ox2 = obs.x + obs.w;
+      const oy2 = obs.y + obs.h;
+      const margin = W * 0.005;
+      const colision = px1 + margin < ox2 - margin && px2 - margin > ox1 + margin && py1 < oy2 && py2 > oy1;
+
+      if (colision && !obs.climbed) {
+        if (obs.tipo === 'wall' && player.state !== 'jump') {
+          player.state = 'climb';
+          player.climbTarget = obs;
+          player.vy = 0;
+        } else {
+          gameOver = true;
+          spawnParticles(player.x + 10, player.y - 20, 8, 'fire');
+          break;
+        }
+      }
+      if (obs.x > -obs.w * 2) newObs.push(obs);
+    }
+    obstacles = newObs;
+
+    const sb = document.getElementById('status-box');
+    if (proxDist < W * 0.25) {
+      sb.classList.add('show');
+      if (proxTipo === 'low') {
+        sb.textContent = '¡SALTA!';
+        sb.style.borderColor = '#ff4444';
+        sb.style.color = '#ff4444';
+      } else if (proxTipo === 'high') {
+        sb.textContent = '¡AGÁCHATE!';
+        sb.style.borderColor = '#44ff44';
+        sb.style.color = '#44ff44';
+      } else {
+        sb.textContent = '¡ESCALA!';
+        sb.style.borderColor = '#ffaa22';
+        sb.style.color = '#ffaa22';
+      }
+    } else {
+      sb.classList.remove('show');
+    }
+
+    updateParticles();
+  }
+
+  // DIBUJAR
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  drawObstacles();
+  if (!gameOver) drawDragon();
+  drawParticles();
+
+  if (score >= goal - 3 && !levelComplete && !gameOver && !victory) {
+    drawFlag();
+  }
+
+  if (flashAlpha > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+    flashAlpha -= 0.04;
+  }
+
+  const ov = document.getElementById('overlay');
+  const ovTitle = document.getElementById('overlay-title');
+  const ovSub = document.getElementById('overlay-sub');
+  const ovHint = document.getElementById('overlay-hint');
+  const ovBox = document.querySelector('.overlay-box');
+
+  if (gameOver) {
+    ov.style.display = 'flex';
+    ovTitle.textContent = '💀 GAME OVER';
+    ovSub.textContent = `Mundo ${currentWorld + 1} perdido`;
+    ovHint.textContent = 'Toca Reiniciar';
+    ovBox.style.borderColor = '#e74c3c';
+  } else if (victory) {
+    ov.style.display = 'flex';
+    ovTitle.textContent = '🏆 ¡VICTORIA!';
+    ovSub.textContent = '¡Completaste los 5 mundos!';
+    ovHint.textContent = 'Toca Reiniciar';
+    ovBox.style.borderColor = '#f1c40f';
+  } else if (levelComplete) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = `bold ${(H * 0.06) | 0}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText('¡NIVEL COMPLETADO!', (W / 2) | 0, (H * 0.45) | 0);
+    ctx.fillStyle = '#0f0';
+    ctx.font = `bold ${(H * 0.03) | 0}px Arial`;
+    ctx.fillText(`Preparando Mundo ${currentWorld + 2}...`, (W / 2) | 0, (H * 0.55) | 0);
+  }
+
+  requestAnimationFrame(update);
+}
+window.addEventListener("resize", () => {
+    resize();
+    generateLayers();
+});
+
+window.addEventListener("orientationchange", () => {
+    setTimeout(() => {
+        resize();
+        generateLayers();
+    }, 300);
+});
+// Iniciar cuando el DOM esté listo
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
